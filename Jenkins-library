@@ -1,0 +1,91 @@
+pipeline {
+    agent any
+    tools {
+        maven 'maven-3.8.6'
+    }
+    stages {
+        stage('Git Clone Repo') {
+            steps {
+                sh 'echo cloning project from Git repo'
+                git 'https://github.com/nonnyboing/web-app-practice.git'
+            }
+            post {
+                success {
+                    slackSend color: 'good', message: 'Git Clone stage succeeded!'
+                }
+                failure {
+                    slackSend color: 'danger', message: 'Git Clone stage failed!'
+                }
+            }
+        }
+        stage('Build Artifact') {
+            steps {
+                sh 'echo building the artifact using maven package'
+                sh 'mvn package'
+            }
+            post {
+                success {
+                    slackSend color: 'good', message: 'Build stage succeeded!'
+                    emailext body: 'Build stage success!', subject: 'Maven Build success', to: 'nonnyfrank82@gmail.com'
+                }
+                failure {
+                    slackSend color: 'danger', message: 'Build stage failed!'
+                    emailext body: 'Build stage failed!', subject: 'Maven Build Failure', to: 'nonnyfrank82@gmail.com'
+                }
+            }
+        }
+        stage('Test Code') {
+            steps {
+                sh 'echo running code test on the built artifact using SonarQube'
+                sh 'mvn sonar:sonar'
+            }
+            post {
+                success {
+                    slackSend color: 'good', message: 'Test stage succeeded!'
+                }
+                failure {
+                    slackSend color: 'danger', message: 'Test stage failed!'
+                }
+            }
+        }
+        stage('Publish to Nexus') {
+            agent { label 'node0' }
+            steps {
+                sh 'echo uploading built artifact to Nexus'
+                sh 'mvn deploy'
+            }
+            post {
+                success {
+                    slackSend color: 'good', message: 'Artifact archive stage succeeded!'
+                }
+                failure {
+                    slackSend color: 'danger', message: 'Artifact archive stage failed!'
+                }
+            }
+        }
+        stage('Deployment to Production') {
+            input {
+                message 'Approval required for deployment to production?'
+                ok 'Approved, Proceed'
+                submitter 'Nonny'
+                parameters {
+                    string(name: 'Admin Approval', defaultValue: 'Devops Manager', description: 'Kindly approve')
+                }
+            }
+            steps {
+                sh 'echo Deploying application to Tomcat server'
+                deploy adapters: [tomcat9(credentialsId: '5923e246-35ee-4684-9587-84afed47d18d', path: '', url: 'http://172.31.89.70:8080/')], contextPath: 'pipeline-app', onFailure: false, war: 'target/*.war'
+            }
+            post {
+                success {
+                    slackSend color: 'good', message: 'Deployment stage succeeded!'
+                    emailext body: 'Deploy stage success!', subject: 'Jenkins Deploy Success', to: 'nonnyfrank82@gmail.com'
+                }
+                failure {
+                    slackSend color: 'danger', message: 'Deployment stage failed!'
+                    emailext body: 'Deploy stage failed!', subject: 'Jenkins Deploy Failure', to: 'nonnyfrank82@gmail.com'
+                }
+            }
+        }
+    }
+}
